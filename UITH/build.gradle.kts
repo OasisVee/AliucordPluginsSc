@@ -1,8 +1,11 @@
-version = "2.0.1"
+version = "2.0.2"
 description = "Upload image to your desired image host within Discord."
 
 aliucord.changelog.set(
         """
+        2.0.2
+        * added support for multiple files
+
         2.0.1
         * Fix default regex settings and json logging on API response.
 
