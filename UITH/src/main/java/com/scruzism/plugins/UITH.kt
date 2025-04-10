@@ -1,6 +1,7 @@
 package com.scruzism.plugins
 
 import android.content.Context
+import android.net.Uri
 import android.webkit.MimeTypeMap
 
 import com.aliucord.Http
@@ -25,7 +26,9 @@ import org.json.JSONException
 import org.json.JSONObject
 
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.lang.IndexOutOfBoundsException
 import java.util.regex.Pattern
 
@@ -187,25 +190,12 @@ class UITH : Plugin() {
             val content = it.args[2] as MessageContent
             val plainText = content.textContent
             val attachments = (it.args[3] as List<Attachment<*>>).toMutableList()
-            val firstAttachment = try { attachments[0] } catch (t: IndexOutOfBoundsException) { return@before }
-
+            
             // Check if plugin is OFF
             if (settings.getBool("pluginOff", false)) { return@before }
-
-            // Check if multiple attachments provided
-            if (attachments.size > 1) {
-                Utils.showToast("UITH: Multiple attachment uploads are not supported!", true)
-                return@before
-            }
-
-            // Check file type and don't upload if `uploadAllAttachments` is false
-            // (There might be a better way to do this lol)
-            val mime = MimeTypeMap.getSingleton().getExtensionFromMimeType(context.getContentResolver().getType(firstAttachment.uri)) as String
-            if (mime !in arrayOf("png", "jpg", "jpeg", "webp")) {
-                if (settings.getBool("uploadAllAttachments", false) == false) {
-                    return@before
-                }
-            }
+            
+            // Skip if there are no attachments
+            if (attachments.isEmpty()) { return@before }
 
             // Don't try to upload if no sxcu config given
             val sxcuConfig = settings.getString("sxcuConfig", null)
@@ -214,24 +204,75 @@ class UITH : Plugin() {
                 return@before
             }
             val configData = GsonUtils.fromJson(sxcuConfig, Config::class.java)
-            //val file = toLocalAttachment(attachments[0])
-            val json = newUpload(File(firstAttachment.data.toString()), configData, LOG)
-
-            // match URL from regex
-            val url = try {
-                val matcher = pattern.matcher(json)
-                matcher.find()
-                matcher.group()
-            } catch (ex: Throwable) {
-                Utils.showToast("UITH: An error occurred, check debug logs", true)
-                LOG.error(ex)
-                return@before
+            
+            // Process all attachments
+            val uploadedUrls = mutableListOf<String>()
+            
+            // Show toast for upload in progress
+            Utils.showToast("UITH: Uploading ${attachments.size} file(s)...", false)
+            
+            for (attachment in attachments) {
+                // Check file type for each attachment
+                val mimeType = context.getContentResolver().getType(attachment.uri)
+                val mime = if (mimeType != null) {
+                    MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+                } else {
+                    attachment.uri.toString().substringAfterLast('.', "")
+                }
+                
+                // Check if we should process this file type
+                if (mime !in arrayOf("png", "jpg", "jpeg", "webp")) {
+                    if (!settings.getBool("uploadAllAttachments", false)) {
+                        continue
+                    }
+                }
+                
+                try {
+                    // Create a temp file from the attachment URI
+                    val tempFile = File.createTempFile("uith_", ".${mime ?: "tmp"}")
+                    tempFile.deleteOnExit()
+                    
+                    // Copy the content from the URI to the temp file
+                    val inputStream = context.contentResolver.openInputStream(attachment.uri)
+                    if (inputStream != null) {
+                        FileOutputStream(tempFile).use { output ->
+                            inputStream.copyTo(output)
+                            inputStream.close()
+                        }
+                        
+                        // Upload the temp file
+                        val json = newUpload(tempFile, configData, LOG)
+                
+                        // match URL from regex
+                        val matcher = pattern.matcher(json)
+                        if (matcher.find()) {
+                            uploadedUrls.add(matcher.group())
+                        }
+                        
+                        // Try to delete the temp file
+                        try {
+                            tempFile.delete()
+                        } catch (e: Exception) {
+                            LOG.debug("Failed to delete temp file: ${e.message}")
+                        }
+                    }
+                } catch (ex: Throwable) {
+                    LOG.error(ex)
+                    Utils.showToast("UITH: Failed to upload one or more files", true)
+                    continue
+                }
             }
-
-            // Send message with the URL received from host
-            content.set("$plainText\n$url")
-            it.args[2] = content
-            it.args[3] = emptyList<Attachment<*>>()
+            
+            if (uploadedUrls.isNotEmpty()) {
+                // Join all URLs with newlines and add to the message
+                content.set("$plainText\n${uploadedUrls.joinToString("\n")}")
+                it.args[2] = content
+                it.args[3] = emptyList<Attachment<*>>()
+                
+                // Show success toast after upload completes
+                Utils.showToast("Upload completed successfully!", false)
+            }
+            
             return@before
         }
 
