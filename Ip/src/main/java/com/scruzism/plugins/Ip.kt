@@ -37,7 +37,7 @@ class Ip : Plugin() {
             val query = it.getRequiredString("query")
             val shouldSend = it.getBoolOrDefault("send", false)
             try {
-                val url = StringBuilder("http://ipwhois.app/json/$query?objects=")
+                val url = StringBuilder("https://ipwhois.app/json/$query?objects=")
                         .append("success,ip,type,as,org,isp,continent,country,country_capital,city,region,")
                         .append("country_phone,latitude,longitude,timezone,currency,completed_requests")
                         .toString()

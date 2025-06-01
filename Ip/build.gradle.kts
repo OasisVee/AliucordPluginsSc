@@ -1,9 +1,11 @@
-version = "2.0.0"
+version = "2.0.1"
 description = "Get details about IPv4/IPv6 address or a domain name."
 
 aliucord.changelog.set(
         """
-
+	# 2.0.1
+	* fixed link to be https and not http -serinova
+	
         # 2.0.0
         * Added new API which gives more details.
         * Added "send" option.
